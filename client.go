@@ -29,16 +29,10 @@ type ApiInfo struct {
 	RequestFormat string `json:"format"`
 }
 
-type apiInfoResponse struct {
-	Data    map[string]ApiInfo `json:"data"`
-	Success bool               `json:"success"`
-}
+type apiInfoResponse map[string]ApiInfo
 
 type loginResponse struct {
-	Data struct {
-		SID string `json:"sid"`
-	} `json:"Data"`
-	Success bool `json:"success"`
+	SID string `json:"sid"`
 }
 
 type Client struct {
@@ -47,6 +41,14 @@ type Client struct {
 	api      map[string]ApiInfo
 	log      *log.Logger
 	http     *http.Client
+}
+
+type Response struct {
+	Success bool `json:"success"`
+	Error   struct {
+		Code int `json:"code"`
+	} `json:"error"`
+	Data interface{} `json:"data"`
 }
 
 func (s *Client) prepareRequest(method string, path string, values map[string]string) (*http.Request, error) {
@@ -85,12 +87,22 @@ func (s *Client) do(method string, path string, values map[string]string, out in
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
 
-	if out != nil {
-		err = json.Unmarshal(body, out)
-		if err != nil {
-			s.log.Printf(string(body))
-		}
-	} else {
+	result := &Response{
+		Data: out,
+	}
+
+	err = json.Unmarshal(body, result)
+	if err != nil {
+		s.log.Printf(string(body))
+		return err
+	}
+
+	if !result.Success {
+		s.log.Println(string(body))
+		return fmt.Errorf("code %d", result.Error.Code)
+	}
+
+	if out == nil {
 		s.log.Printf(string(body))
 	}
 	return err
@@ -123,10 +135,10 @@ func (s *Client) GetApiInfo() (map[string]ApiInfo, error) {
 		"query":   "all",
 	}
 
-	resp := &apiInfoResponse{}
+	resp := apiInfoResponse{}
 
-	err := s.do("GET", "query.cgi", params, resp)
-	return resp.Data, err
+	err := s.do("GET", "query.cgi", params, &resp)
+	return resp, err
 }
 
 func (s *Client) login(user, password string) error {
@@ -157,12 +169,8 @@ func (s *Client) login(user, password string) error {
 		return err
 	}
 
-	if !resp.Success {
-		return fmt.Errorf("login failure")
-	}
-
 	s.api = api
-	s.sid = resp.Data.SID
+	s.sid = resp.SID
 	return nil
 }
 

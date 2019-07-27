@@ -15,6 +15,10 @@ func (s *Synology) WithLogger(log *log.Logger) *Synology {
 	return s
 }
 
+func (s *Synology) API() (map[string]ApiInfo, error) {
+	return s.client.GetApiInfo()
+}
+
 func Login(host string, username, password string) (*Synology, error) {
 	c := NewClient(host)
 	c.log = &log.Logger{}

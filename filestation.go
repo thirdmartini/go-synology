@@ -3,6 +3,7 @@ package synology
 import (
 	"fmt"
 	"io"
+	"time"
 )
 
 const (
@@ -32,6 +33,7 @@ type FileStationService interface {
 	List(path string) ([]FileInfo, error)
 	Stat(path string) ([]FileInfo, error)
 	Download(path string, w io.Writer) error
+	MD5(path string) (string, error)
 }
 
 type FileInfo struct {
@@ -60,14 +62,11 @@ type FileStationServiceOp struct {
 }
 
 type listResponse struct {
-	Data struct {
-		Offset int `json:"offset"`
-		// Note tis is really a union
-		Shares []FileInfo `json:"shares"`
-		Files  []FileInfo `json:"files"`
-		Total  int        `json:"total"`
-	} `json:"data"`
-	Success bool `json:"success"`
+	Offset int `json:"offset"`
+	// Note tis is really a union
+	Shares []FileInfo `json:"shares"`
+	Files  []FileInfo `json:"files"`
+	Total  int        `json:"total"`
 }
 
 func (s *FileStationServiceOp) ListShares() ([]FileInfo, error) {
@@ -82,7 +81,7 @@ func (s *FileStationServiceOp) ListShares() ([]FileInfo, error) {
 	resp := &listResponse{}
 
 	err := s.c.do("GET", api.Path, params, resp)
-	return resp.Data.Shares, err
+	return resp.Shares, err
 }
 
 func (s *FileStationServiceOp) List(path string) ([]FileInfo, error) {
@@ -99,7 +98,7 @@ func (s *FileStationServiceOp) List(path string) ([]FileInfo, error) {
 	resp := &listResponse{}
 
 	err := s.c.do("GET", api.Path, params, resp)
-	return resp.Data.Files, err
+	return resp.Files, err
 }
 
 func (s *FileStationServiceOp) Stat(path string) ([]FileInfo, error) {
@@ -113,10 +112,10 @@ func (s *FileStationServiceOp) Stat(path string) ([]FileInfo, error) {
 		"additional": "[\"size\",\"owner\",\"time\",\"perm\"]",
 	}
 
-	//resp := &listResponse{}
+	resp := &listResponse{}
 
-	err := s.c.do("GET", api.Path, params, nil)
-	return nil, err
+	err := s.c.do("GET", api.Path, params, resp)
+	return resp.Files, err
 }
 
 func (s *FileStationServiceOp) Download(path string, w io.Writer) error {
@@ -132,4 +131,52 @@ func (s *FileStationServiceOp) Download(path string, w io.Writer) error {
 
 	err := s.c.download("GET", api.Path, params, w)
 	return err
+}
+
+// MD5 Calculate MD5 of a file on the nas synchronously
+func (s *FileStationServiceOp) MD5(path string) (string, error) {
+	api := s.c.GetApi(SYNOFileStationMD5)
+
+	params := map[string]string{
+		"api":       api.Name,
+		"version":   fmt.Sprintf("%d", api.MaxVersion),
+		"method":    "start",
+		"file_path": path,
+	}
+
+	resp := struct {
+		TaskID string `json:"taskid"`
+	}{}
+
+	err := s.c.do("GET", api.Path, params, &resp)
+	if err != nil {
+		return "", err
+	}
+
+	params = map[string]string{
+		"api":     api.Name,
+		"version": fmt.Sprintf("%d", api.MaxVersion),
+		"method":  "status",
+		"taskid":  resp.TaskID,
+	}
+
+	for {
+		resp := struct {
+			Finished bool   `json:"finished"`
+			Hash     string `json:"md5"`
+		}{}
+
+		err := s.c.do("GET", api.Path, params, &resp)
+		if err != nil {
+			return "", err
+		}
+
+		if resp.Finished {
+			return resp.Hash, nil
+		}
+
+		time.Sleep(time.Millisecond * 100)
+	}
+
+	return "", fmt.Errorf("timed out waiting for md5 hash")
 }

@@ -68,6 +68,14 @@ var globalFlags = []cli.Flag{
 // Commands are the top-level commands for rachio-cli
 var commands = []cli.Command{
 	{
+		Name:        "api",
+		ShortName:   "api",
+		Usage:       "API info Commands",
+		Description: "API info Commands",
+		Subcommands: apiCommands,
+	},
+
+	{
 		Name:        "filestation",
 		ShortName:   "fs",
 		Usage:       "FileStation commands",

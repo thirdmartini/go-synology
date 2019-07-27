@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"text/tabwriter"
+	"time"
 
 	"github.com/dustin/go-humanize"
 	"github.com/urfave/cli"
@@ -42,6 +43,16 @@ var fileStationCommands = []cli.Command{
 		Flags: []cli.Flag{
 			pathFlag,
 			destFlag,
+		},
+	},
+	{
+		Name:        "md5",
+		ShortName:   "md5",
+		Usage:       "Calculate the MD5 of a file on the NAS",
+		Description: "Calculate the MD5 of a file on the NAS",
+		Action:      fileStationMD5,
+		Flags: []cli.Flag{
+			pathFlag,
 		},
 	},
 }
@@ -86,10 +97,25 @@ func fileStationStat(ctx *cli.Context) {
 
 	path := ctx.String(pathFlag.Name)
 
-	_, err := syno.FileStation.Stat(path)
+	files, err := syno.FileStation.Stat(path)
 	if err != nil {
 		log.Panic(err)
 	}
+
+	for _, fi := range files {
+		fmt.Printf("File: %s\n", fi.Path)
+
+		kind := "Regular File"
+		if fi.Isdir {
+			kind = "Directory"
+		}
+		fmt.Printf("Size: %10s  File Type: %s\n", humanize.Bytes(fi.Stat.Size), kind)
+		fmt.Printf("Owner: %10s  Group: %s\n", fi.Stat.Owner.User, fi.Stat.Owner.Group)
+		fmt.Printf("Access: %s\n", time.Unix(int64(fi.Stat.Time.Atime), 0).String())
+		fmt.Printf("Modify: %s\n", time.Unix(int64(fi.Stat.Time.Mtime), 0).String())
+		fmt.Printf("Change: %s\n", time.Unix(int64(fi.Stat.Time.Ctime), 0).String())
+	}
+
 }
 
 func fileStationDownload(ctx *cli.Context) {
@@ -101,4 +127,17 @@ func fileStationDownload(ctx *cli.Context) {
 	if err != nil {
 		log.Panic(err)
 	}
+}
+
+func fileStationMD5(ctx *cli.Context) {
+	syno := mustGetSyno(ctx)
+
+	path := ctx.String(pathFlag.Name)
+
+	hash, err := syno.FileStation.MD5(path)
+	if err != nil {
+		log.Panic(err)
+	}
+
+	fmt.Printf("%s %s\n", hash, path)
 }
